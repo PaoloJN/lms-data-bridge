@@ -12,11 +12,59 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   if (message.type === "GET_SYNC_STATUS") {
     chrome.storage.local.get("lmsData", (result) => {
+      const data = result.lmsData;
+      if (!data) {
+        sendResponse({ hasSynced: false });
+        return;
+      }
+
+      // Detect current term from course codes (YYYYTT pattern)
+      const termCodes = new Set<string>();
+      for (const c of data.courses ?? []) {
+        const m = (c.code || c.name || "").match(/(20\d{2})(10|20|24|30)/);
+        if (m) termCodes.add(m[1] + m[2]);
+      }
+      const currentTermCode = [...termCodes].sort().pop() ?? null;
+
+      // Filter courses to current term
+      const currentCourseIds = new Set<string>();
+      for (const c of data.courses ?? []) {
+        const m = (c.code || c.name || "").match(/(20\d{2})(10|20|24|30)/);
+        if (!m || m[1] + m[2] === currentTermCode) currentCourseIds.add(c.id);
+      }
+      const currentCourses = (data.courses ?? []).filter(
+        (c: Record<string, unknown>) => currentCourseIds.has(c.id as string)
+      );
+
+      // Upcoming assignments (next 7 days, not graded/submitted, current term)
+      const now = Date.now();
+      const weekOut = now + 7 * 86400000;
+      const upcoming = (data.assignments ?? [])
+        .filter((a: Record<string, unknown>) => {
+          if (!a.dueDate) return false;
+          if (!currentCourseIds.has(a.courseId as string)) return false;
+          const due = new Date(a.dueDate as string).getTime();
+          return due >= now && due <= weekOut && a.status !== "graded" && a.status !== "submitted";
+        })
+        .sort((a: Record<string, unknown>, b: Record<string, unknown>) =>
+          new Date(a.dueDate as string).getTime() - new Date(b.dueDate as string).getTime()
+        )
+        .slice(0, 5);
+
+      // Missing count (current term only)
+      const missing = (data.assignments ?? []).filter(
+        (a: Record<string, unknown>) => a.status === "missing" && currentCourseIds.has(a.courseId as string)
+      ).length;
+
       sendResponse({
-        hasSynced: !!result.lmsData,
-        lastSynced: result.lmsData?.lastSynced ?? null,
-        courseCount: result.lmsData?.courses?.length ?? 0,
-        assignmentCount: result.lmsData?.assignments?.length ?? 0,
+        hasSynced: true,
+        lastSynced: data.lastSynced ?? null,
+        courseCount: currentCourses.length,
+        assignmentCount: (data.assignments ?? []).filter(
+          (a: Record<string, unknown>) => currentCourseIds.has(a.courseId as string)
+        ).length,
+        upcoming,
+        missing,
       });
     });
     return true;

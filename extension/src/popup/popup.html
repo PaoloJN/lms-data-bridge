@@ -3,41 +3,149 @@
 <head>
   <meta charset="UTF-8">
   <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      width: 300px;
-      padding: 16px;
+      width: 320px;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      font-size: 14px;
+      font-size: 13px;
       color: #1a1a1a;
-      margin: 0;
+      background: #fafafa;
     }
-    h1 { font-size: 16px; margin: 0 0 12px 0; }
-    .status {
-      padding: 8px 12px;
-      border-radius: 8px;
+    .header {
+      padding: 14px 16px 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid #eee;
+      background: #fff;
+    }
+    .header h1 { font-size: 15px; font-weight: 700; letter-spacing: -0.3px; }
+    .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      display: inline-block;
+    }
+    .dot.green { background: #22c55e; }
+    .dot.red { background: #ef4444; }
+    .dot.yellow { background: #eab308; }
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: #888;
+    }
+
+    .section {
+      padding: 12px 16px;
+      border-bottom: 1px solid #eee;
+      background: #fff;
+    }
+    .section-title {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #999;
       margin-bottom: 8px;
     }
-    .status.synced { background: #f0fdf4; border: 1px solid #bbf7d0; }
-    .status.not-synced { background: #fefce8; border: 1px solid #fef08a; }
-    .status.server-ok { background: #eff6ff; border: 1px solid #bfdbfe; }
-    .status.server-off { background: #fef2f2; border: 1px solid #fecaca; }
-    .stat {
+
+    .assignment-item {
+      padding: 6px 0;
       display: flex;
       justify-content: space-between;
-      padding: 4px 0;
-      border-bottom: 1px solid #f0f0f0;
+      align-items: flex-start;
+      gap: 8px;
     }
-    .stat:last-child { border-bottom: none; }
-    .label { color: #666; }
-    .value { font-weight: 600; }
-    .hint { margin-top: 12px; font-size: 12px; color: #888; }
-    .section { margin-bottom: 12px; }
+    .assignment-item + .assignment-item { border-top: 1px solid #f5f5f5; }
+    .assignment-name {
+      font-weight: 500;
+      line-height: 1.3;
+      flex: 1;
+    }
+    .assignment-course {
+      font-size: 11px;
+      color: #888;
+      margin-top: 1px;
+    }
+    .assignment-due {
+      font-size: 11px;
+      color: #666;
+      white-space: nowrap;
+      text-align: right;
+    }
+    .assignment-due.urgent { color: #dc2626; font-weight: 600; }
+    .assignment-due.soon { color: #d97706; }
+
+    .grade-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 4px 0;
+    }
+    .grade-row + .grade-row { border-top: 1px solid #f5f5f5; }
+    .grade-name { font-weight: 500; }
+    .grade-bar-wrap {
+      width: 80px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .grade-bar {
+      flex: 1;
+      height: 4px;
+      background: #eee;
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .grade-bar-fill { height: 100%; border-radius: 2px; }
+    .grade-pct {
+      font-size: 11px;
+      font-weight: 600;
+      width: 38px;
+      text-align: right;
+    }
+
+    .stats-row {
+      display: flex;
+      gap: 8px;
+      padding: 12px 16px;
+      background: #fff;
+    }
+    .stat-card {
+      flex: 1;
+      padding: 8px 10px;
+      background: #f8f8f8;
+      border-radius: 8px;
+      text-align: center;
+    }
+    .stat-number { font-size: 20px; font-weight: 700; line-height: 1.2; }
+    .stat-label { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 0.3px; }
+    .stat-number.alert { color: #dc2626; }
+
+    .empty {
+      text-align: center;
+      padding: 20px 16px;
+      color: #999;
+      font-size: 12px;
+      background: #fff;
+    }
+
+    .footer {
+      padding: 8px 16px;
+      font-size: 10px;
+      color: #bbb;
+      text-align: center;
+    }
   </style>
 </head>
 <body>
-  <h1>LMS Bridge</h1>
-  <div id="server-status" class="section"></div>
-  <div id="sync-status" class="section"></div>
+  <div class="header">
+    <h1>LMS Bridge</h1>
+    <div class="header-right" id="connection"></div>
+  </div>
+  <div id="content">
+    <div class="empty">Loading...</div>
+  </div>
   <script src="popup.ts" type="module"></script>
 </body>
 </html>
