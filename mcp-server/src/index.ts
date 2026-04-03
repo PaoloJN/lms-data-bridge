@@ -9,6 +9,73 @@ const server = new McpServer({
   version: "0.1.0",
 });
 
+// --- Term Detection ---
+
+// Blackboard course codes follow pattern: XXXXX.YYYYTT
+// YYYY = year, TT = term (10=Summer, 20=Fall, 24=Winter, 30=Spring)
+const TERM_NAMES: Record<string, string> = {
+  "10": "Summer",
+  "20": "Fall",
+  "24": "Winter",
+  "30": "Spring",
+};
+
+interface TermInfo {
+  code: string;    // e.g. "202630"
+  year: number;    // e.g. 2026
+  termCode: string; // e.g. "30"
+  label: string;   // e.g. "Spring 2026"
+}
+
+function extractTerm(courseCode: string): TermInfo | null {
+  // Match YYYYTT at end of code like "31575.202630" or in name like "202630 - MATH..."
+  const match = courseCode.match(/(20\d{2})(10|20|24|30)/);
+  if (!match) return null;
+  const year = parseInt(match[1]);
+  const termCode = match[2];
+  return {
+    code: match[1] + match[2],
+    year,
+    termCode,
+    label: `${TERM_NAMES[termCode] || termCode} ${year}`,
+  };
+}
+
+// Detect current term from the data — the most recent term code found
+function detectCurrentTerm(courses: { code: string; name: string }[]): TermInfo | null {
+  const terms = new Map<string, TermInfo>();
+  for (const c of courses) {
+    // Check both code and name for term info
+    const term = extractTerm(c.code) || extractTerm(c.name);
+    if (term) terms.set(term.code, term);
+  }
+  if (terms.size === 0) return null;
+  // Return the most recent (highest code = most recent term)
+  return [...terms.values()].sort((a, b) => b.code.localeCompare(a.code))[0];
+}
+
+function isCurrentTerm(courseCode: string, courseName: string, currentTermCode: string): boolean {
+  const term = extractTerm(courseCode) || extractTerm(courseName);
+  if (!term) return true; // If we can't detect term, include it (e.g. "PHYS_161_General_Physics_I")
+  return term.code === currentTermCode;
+}
+
+// Filter any array of items with courseId/courseName to current term only
+function filterCurrentTerm<T extends { courseId: string; courseName: string }>(
+  items: T[],
+  courses: { id: string; code: string; name: string }[],
+  currentTermCode: string | null,
+): T[] {
+  if (!currentTermCode) return items;
+  // Build set of current-term course IDs
+  const currentCourseIds = new Set(
+    courses
+      .filter((c) => isCurrentTerm(c.code, c.name, currentTermCode))
+      .map((c) => c.id)
+  );
+  return items.filter((item) => currentCourseIds.has(item.courseId));
+}
+
 // --- Helpers ---
 
 // Smart course matching: "math 182", "MATH-182", "math", "enee" all work
@@ -42,12 +109,14 @@ function filterByCourse<T extends { courseName: string; courseId: string }>(
   return items.filter((item) => matchesCourse(item.courseName, item.courseId, course));
 }
 
-// Clean up course display name: "202630 - MATH-182-31575" → "MATH-182 (Spring 2026)"
+// Clean up course display name: "202630 - MATH-182-31575" → "MATH 182"
 function cleanCourseName(name: string): string {
-  // Try to extract the meaningful part
-  const match = name.match(/([A-Z]{2,5}[\s\-]\d{3}[A-Z]?)/i);
-  if (match) return match[1].replace("-", " ");
-  // For names like "MGMT 210: Entrepreneurial..." just return as-is
+  // Try to extract the meaningful part (e.g. MATH-182, COMM-108, ENEE-244)
+  const match = name.match(/([A-Z]{2,5})[\s\-_]?(\d{3}[A-Z]?)/i);
+  if (match) return `${match[1]} ${match[2]}`.toUpperCase();
+  // For names like "MGMT 210: Entrepreneurial..." extract just the code
+  const colonMatch = name.match(/^([A-Z]{2,5}\s+\d{3})/i);
+  if (colonMatch) return colonMatch[1].toUpperCase();
   return name;
 }
 
@@ -75,28 +144,46 @@ function formatDueDate(dueDate: string): string {
 // --- Tool: lms_get_courses ---
 server.tool(
   "lms_get_courses",
-  "Get all enrolled courses with their IDs and names.",
-  { source: z.string().optional().describe('Filter by LMS source (e.g. "blackboard", "canvas")') },
+  "Get enrolled courses. Defaults to current semester only. Set all_terms=true to see all.",
+  {
+    all_terms: z.boolean().optional().describe("Show courses from all terms, not just current (default: false)"),
+    source: z.string().optional().describe('Filter by LMS source (e.g. "blackboard", "canvas")'),
+  },
   async (args) => {
     const data = loadData();
     let courses = data.courses ?? [];
+    const currentTerm = detectCurrentTerm(courses);
+
     if (args.source) {
       courses = courses.filter((c) => c.lmsSource === args.source);
+    }
+    if (!args.all_terms && currentTerm) {
+      courses = courses.filter((c) => isCurrentTerm(c.code, c.name, currentTerm.code));
     }
     if (courses.length === 0) {
       return { content: [{ type: "text", text: "No courses found. Sync data by visiting your LMS with the extension installed." }] };
     }
+
+    const termLabel = currentTerm ? ` (${currentTerm.label})` : "";
+    const header = args.all_terms
+      ? `All ${courses.length} courses:`
+      : `${courses.length} current courses${termLabel}:`;
+
     const text = courses
-      .map((c) => `- **${cleanCourseName(c.name)}** — ${c.name}`)
+      .map((c) => {
+        const term = extractTerm(c.code) || extractTerm(c.name);
+        const termSuffix = args.all_terms && term ? ` [${term.label}]` : "";
+        return `- **${cleanCourseName(c.name)}**${termSuffix}`;
+      })
       .join("\n");
-    return { content: [{ type: "text", text: `${courses.length} courses:\n\n${text}` }] };
+    return { content: [{ type: "text", text: `${header}\n\n${text}` }] };
   }
 );
 
 // --- Tool: lms_get_upcoming ---
 server.tool(
   "lms_get_upcoming",
-  "Get assignments due in the next N days that haven't been completed yet. Perfect for 'what do I have due this week?' Excludes already-graded and submitted work.",
+  "Get assignments due in the next N days that haven't been completed yet. Perfect for 'what do I have due this week?' Excludes already-graded and submitted work. Only shows current semester.",
   {
     days: z.number().optional().describe("Days to look ahead (default: 7)"),
     course: z.string().optional().describe("Filter by course (e.g. 'math 182', 'enee', 'mgmt')"),
@@ -106,12 +193,14 @@ server.tool(
     const days = args.days ?? 7;
     const now = new Date();
     const cutoff = new Date(now.getTime() + days * 86400000);
+    const currentTerm = detectCurrentTerm(data.courses ?? []);
 
-    let assignments = (data.assignments ?? []).filter((a) => {
+    let assignments = filterCurrentTerm(data.assignments ?? [], data.courses ?? [], currentTerm?.code ?? null);
+
+    assignments = assignments.filter((a) => {
       if (!a.dueDate) return false;
       const due = new Date(a.dueDate);
       if (due < now || due > cutoff) return false;
-      // Exclude already completed work
       if (a.status === "graded" || a.status === "submitted") return false;
       return true;
     });
@@ -136,16 +225,21 @@ server.tool(
 // --- Tool: lms_get_assignments ---
 server.tool(
   "lms_get_assignments",
-  "Get all assignments, filterable by course, status, and date range. Use this for detailed assignment queries.",
+  "Get all assignments, filterable by course, status, and date range. Current semester only by default. Set all_terms=true to include past semesters.",
   {
     course: z.string().optional().describe("Filter by course (e.g. 'math 182', 'phys', 'comm 108')"),
     status: z.enum(["upcoming", "submitted", "graded", "missing", "unknown"]).optional().describe("Filter by status"),
     from: z.string().optional().describe("Start date (ISO 8601)"),
     to: z.string().optional().describe("End date (ISO 8601)"),
+    all_terms: z.boolean().optional().describe("Include past semesters (default: false)"),
   },
   async (args) => {
     const data = loadData();
-    let assignments = filterByCourse(data.assignments ?? [], args.course);
+    const currentTerm = detectCurrentTerm(data.courses ?? []);
+    let assignments = args.all_terms
+      ? (data.assignments ?? [])
+      : filterCurrentTerm(data.assignments ?? [], data.courses ?? [], currentTerm?.code ?? null);
+    assignments = filterByCourse(assignments, args.course);
 
     if (args.status) assignments = assignments.filter((a) => a.status === args.status);
     if (args.from) {
@@ -182,14 +276,18 @@ server.tool(
 // --- Tool: lms_get_grades ---
 server.tool(
   "lms_get_grades",
-  "Get grades. Filter by course. Use summary=true for a per-course GPA overview. Default shows individual grades.",
+  "Get grades. Filter by course. Defaults to current semester summary view (per-course averages sorted lowest first). Set summary=false for individual grades. Set all_terms=true for past semesters.",
   {
     course: z.string().optional().describe("Filter by course (e.g. 'math 182', 'comm', 'mgmt 210')"),
-    summary: z.boolean().optional().describe("If true, show per-course weighted averages instead of individual grades"),
+    summary: z.boolean().optional().describe("If true (default), show per-course averages. If false, show individual grades."),
+    all_terms: z.boolean().optional().describe("Include past semesters (default: false)"),
   },
   async (args) => {
     const data = loadData();
-    let grades = data.grades ?? [];
+    const currentTerm = detectCurrentTerm(data.courses ?? []);
+    let grades = args.all_terms
+      ? (data.grades ?? [])
+      : filterCurrentTerm(data.grades ?? [], data.courses ?? [], currentTerm?.code ?? null);
 
     if (args.course) {
       grades = grades.filter((g) => matchesCourse(g.courseName, g.courseId, args.course!));
@@ -249,14 +347,18 @@ server.tool(
 // --- Tool: lms_get_announcements ---
 server.tool(
   "lms_get_announcements",
-  "Get recent announcements from courses.",
+  "Get recent announcements from courses. Current semester only by default.",
   {
     course: z.string().optional().describe("Filter by course (e.g. 'enes', 'phys 161')"),
     limit: z.number().optional().describe("Max announcements to return (default: 10)"),
+    all_terms: z.boolean().optional().describe("Include past semesters (default: false)"),
   },
   async (args) => {
     const data = loadData();
-    let announcements = data.announcements ?? [];
+    const currentTerm = detectCurrentTerm(data.courses ?? []);
+    let announcements = args.all_terms
+      ? (data.announcements ?? [])
+      : filterCurrentTerm(data.announcements ?? [], data.courses ?? [], currentTerm?.code ?? null);
 
     if (args.course) {
       announcements = announcements.filter((a) => matchesCourse(a.courseName, a.courseId, args.course!));
@@ -332,25 +434,34 @@ server.tool(
 // --- Tool: lms_search ---
 server.tool(
   "lms_search",
-  "Full-text search across all LMS data — courses, assignments, announcements. Use when the question doesn't map to a specific tool.",
-  { query: z.string().describe("Search query (case-insensitive)") },
+  "Full-text search across all LMS data — courses, assignments, announcements. Current semester only by default.",
+  {
+    query: z.string().describe("Search query (case-insensitive)"),
+    all_terms: z.boolean().optional().describe("Search across all semesters (default: false)"),
+  },
   async (args) => {
     const data = loadData();
     const q = args.query.toLowerCase();
+    const currentTerm = detectCurrentTerm(data.courses ?? []);
+    const termCode = args.all_terms ? null : (currentTerm?.code ?? null);
     const results: string[] = [];
 
-    for (const c of data.courses ?? []) {
+    const courses = data.courses ?? [];
+    const assignments = termCode ? filterCurrentTerm(data.assignments ?? [], courses, termCode) : (data.assignments ?? []);
+    const announcements = termCode ? filterCurrentTerm(data.announcements ?? [], courses, termCode) : (data.announcements ?? []);
+
+    for (const c of courses.filter(c => !termCode || isCurrentTerm(c.code, c.name, termCode))) {
       if (c.name.toLowerCase().includes(q) || c.code.toLowerCase().includes(q)) {
         results.push(`[Course] **${cleanCourseName(c.name)}** (${c.name})`);
       }
     }
-    for (const a of data.assignments ?? []) {
+    for (const a of assignments) {
       if (a.name.toLowerCase().includes(q) || a.description?.toLowerCase().includes(q)) {
         const due = a.dueDate ? ` — due ${formatDueDate(a.dueDate)}` : "";
         results.push(`[Assignment] **${a.name}** (${cleanCourseName(a.courseName)})${due} [${a.status}]`);
       }
     }
-    for (const a of data.announcements ?? []) {
+    for (const a of announcements) {
       if (a.title.toLowerCase().includes(q) || a.body.toLowerCase().includes(q)) {
         const date = new Date(a.date).toLocaleDateString("en-US", { month: "short", day: "numeric" });
         results.push(`[Announcement] **${a.title}** (${cleanCourseName(a.courseName)}) — ${date}`);
