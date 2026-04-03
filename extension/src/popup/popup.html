@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body {
+      width: 300px;
+      padding: 16px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 14px;
+      color: #1a1a1a;
+      margin: 0;
+    }
+    h1 { font-size: 16px; margin: 0 0 12px 0; }
+    .status {
+      padding: 8px 12px;
+      border-radius: 8px;
+      margin-bottom: 8px;
+    }
+    .status.synced { background: #f0fdf4; border: 1px solid #bbf7d0; }
+    .status.not-synced { background: #fefce8; border: 1px solid #fef08a; }
+    .status.server-ok { background: #eff6ff; border: 1px solid #bfdbfe; }
+    .status.server-off { background: #fef2f2; border: 1px solid #fecaca; }
+    .stat {
+      display: flex;
+      justify-content: space-between;
+      padding: 4px 0;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    .stat:last-child { border-bottom: none; }
+    .label { color: #666; }
+    .value { font-weight: 600; }
+    .hint { margin-top: 12px; font-size: 12px; color: #888; }
+    .section { margin-bottom: 12px; }
+  </style>
+</head>
+<body>
+  <h1>LMS Bridge</h1>
+  <div id="server-status" class="section"></div>
+  <div id="sync-status" class="section"></div>
+  <script src="popup.ts" type="module"></script>
+</body>
+</html>

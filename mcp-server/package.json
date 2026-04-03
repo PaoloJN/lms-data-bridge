@@ -1,0 +1,21 @@
+{
+  "name": "lms-bridge-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MCP server for querying LMS data extracted by LMS Bridge extension",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}

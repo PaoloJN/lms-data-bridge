@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "LMS Bridge",
+  "version": "0.1.0",
+  "description": "Extract LMS data and bridge it to AI tools",
+  "permissions": [
+    "storage",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "*://*.blackboard.com/*",
+    "*://*.instructure.com/*"
+  ],
+  "background": {
+    "service_worker": "src/background/index.ts",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.blackboard.com/*"
+      ],
+      "js": ["src/content/index.ts"],
+      "run_at": "document_idle",
+      "world": "ISOLATED"
+    }
+  ],
+  "action": {
+    "default_popup": "src/popup/popup.html",
+    "default_title": "LMS Bridge"
+  },
+  "icons": {}
+}
